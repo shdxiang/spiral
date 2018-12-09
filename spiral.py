@@ -19,6 +19,7 @@ REST_URL = 'https://api.spiral.exchange/api/v1'
 WS_URL = 'wss://ws.spiral.exchange'
 PING_INTERVAL = 30
 QUEUE_MAX_SIZE = 1024
+INITIAL_RETRY_DELAY = 0.2
 
 
 class Rest(object):
@@ -117,27 +118,30 @@ class Websocket(object):
         self.expires = expires
         self.url = WS_URL
         self.queue = multiprocessing.Queue(QUEUE_MAX_SIZE)
+        self.retry_delay = INITIAL_RETRY_DELAY
 
     def start(self):
+        self._ws_start()
+
+    def stop(self):
+        self.socket.close()
+        self._stop_timer()
+
+    def _ws_start(self):
         self.socket = websocket.WebSocketApp(self.url,
                                              on_open=self._on_open,
                                              on_message=self._on_message,
                                              on_error=self._on_error,
                                              on_close=self._on_close)
-
         kwargs = {'sockopt': ((socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),)}
         self.thread = threading.Thread(
             target=self.socket.run_forever, kwargs=kwargs)
         self.thread.start()
 
-    def stop(self):
-        self.socket.close()
-        self.thread.join()
-        self._stop_timer()
-
     def _on_open(self, *args):
         logging.info('websocket connected')
         self._start_timer()
+        self.retry_delay = INITIAL_RETRY_DELAY
 
     def _on_message(self, message):
         logging.debug(message)
@@ -158,6 +162,12 @@ class Websocket(object):
     def _on_error(self, error):
         logging.error(error)
         self._stop_timer()
+        self.socket.close()
+        time.sleep(self.retry_delay)
+        if self.retry_delay < 10:
+            self.retry_delay = 2 * self.retry_delay
+
+        self._ws_start()
 
     def _start_timer(self):
         self.ping_timer = threading.Timer(
@@ -238,52 +248,53 @@ class Sprial(object):
         self.rest.stop()
 
 
-def spiral_test_get_data(spiral):
+def spiral_test_handle_data(api):
     while True:
-        data = spiral.ws.get_data()
+        data = api.ws.get_data()
         if data:
-            logging.info('got data:')
-            logging.info(data)
+            logging.debug('got data:')
+            logging.debug(data)
             if data['event'] == 'connected':
                 # subscribe public
-                spiral.ws.subscribe_ticker(symbols=["BTCUSDT", "ETHBTC"])
-                spiral.ws.subscribe_orderbook(symbols=["BTCUSDT"])
-                spiral.ws.subscribe_trade(symbols=["BTCUSDT"])
-                spiral.ws.subscribe_kline(symbols=["ETHBTC"], period_minutes=5)
+                api.ws.subscribe_ticker(symbols=["BTCUSDT", "ETHBTC"])
+                api.ws.subscribe_orderbook(symbols=["BTCUSDT"])
+                api.ws.subscribe_trade(symbols=["BTCUSDT"])
+                api.ws.subscribe_kline(symbols=["ETHBTC"], period_minutes=5)
             elif data['event'] == 'authenticated':
                 # subscribe private
-                spiral.ws.subscribe_order(symbols=["BTCUSDT"])
-                spiral.ws.subscribe_account()
+                api.ws.subscribe_order(symbols=["BTCUSDT"])
+                api.ws.subscribe_account()
 
 
 def spiral_test():
-    apiKey = 'LAqUlngMIQkIUjXMUreyu3qn'
-    apiSecret = 'chNOOS4KvNXR_Xq4k4c9qsfoKWvnDecLATCRlcBwyKDYnWgO'
+    api_key = 'LAqUlngMIQkIUjXMUreyu3qn'
+    api_secret = 'chNOOS4KvNXR_Xq4k4c9qsfoKWvnDecLATCRlcBwyKDYnWgO'
+    api_expires = 60
 
-    spiral = Sprial(apiKey, apiSecret, 60)
+    api = Sprial(api_key, api_secret, api_expires)
 
-    spiral.start()
+    api.start()
 
-    # spiral.rest.get_currencies()
-    # spiral.rest.get_products()
-    # spiral.rest.get_klines(symbol='BTCUSDT', limit=5)
-    # spiral.rest.get_orderbook(symbol='BTCUSDT', limit=5)
-    # spiral.rest.get_trades(count=5)
-    #
-    # spiral.rest.get_wallet_balances(currency='USDT')
-    # spiral.rest.get_myTrades(count=5)
-    # spiral.rest.get_order(count=5, symbol='BTCUSDT', side='ask')
-    # spiral.rest.post_order(symbol='BTCUSDT', side='bid',
-    #                        type='limit', quantity='0.01', price='1000')
-    # spiral.rest.delete_order(order_id=131513)
-    # spiral.rest.delete_order_all()
+    api.rest.get_currencies()
+    api.rest.get_products()
+    api.rest.get_klines(symbol='BTCUSDT', limit=5)
+    api.rest.get_orderbook(symbol='BTCUSDT', limit=5)
+    api.rest.get_trades(count=5)
+
+    api.rest.get_wallet_balances(currency='USDT')
+    api.rest.get_myTrades(count=5)
+    api.rest.get_order(count=5, symbol='BTCUSDT', side='ask')
+    api.rest.post_order(symbol='BTCUSDT', side='bid',
+                        type='limit', quantity='0.01', price='1000')
+    api.rest.delete_order(order_id=131513)
+    api.rest.delete_order_all()
 
     try:
-        spiral_test_get_data(spiral)
+        spiral_test_handle_data(api)
     except KeyboardInterrupt:
         pass
 
-    spiral.stop()
+    api.stop()
 
 
 def main():
