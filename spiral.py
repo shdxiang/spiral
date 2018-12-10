@@ -144,7 +144,7 @@ class Connection(object):
         self.thread.start()
 
     def _on_open(self, *args):
-        logging.info('websocket connected')
+        logging.debug('websocket connected')
         self._start_timer()
         self.retry_delay = INITIAL_RETRY_DELAY
 
@@ -162,7 +162,7 @@ class Connection(object):
         self._enqueue_data(data)
 
     def _on_close(self, *args):
-        logging.info('websocket closed')
+        logging.debug('websocket closed')
         self._stop_timer()
 
     def _on_error(self, error):

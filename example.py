@@ -40,9 +40,9 @@ def loop_handle_data(api):
                 continue
 
             price = orders[0][0]
-            quantity = orders[0][1]
+            quantity = float(orders[0][1])
 
-            if price > 100.0:
+            if quantity > 0 and price > 100.0:
                 logging.info('post_order')
                 errcode, resp = api.rest.post_order(
                     symbol='ETHUSDT', side='ask', type='limit', quantity=quantity, price=price)
@@ -72,7 +72,7 @@ def trade():
 
 def main():
     format = '%(asctime)s %(filename)s [%(lineno)d][%(levelname)s] %(message)s'
-    logging.basicConfig(level=logging.DEBUG, format=format)
+    logging.basicConfig(level=logging.INFO, format=format)
 
     trade()
 
