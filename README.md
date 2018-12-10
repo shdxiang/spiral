@@ -72,3 +72,9 @@ api.ws.subscribe_kline(symbols=["ETHBTC"], period_minutes=5)
 api.ws.subscribe_order(symbols=["BTCUSDT"])
 api.ws.subscribe_account()
 ```
+
+## Test
+
+```
+python spiral.py
+```

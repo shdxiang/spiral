@@ -5,8 +5,8 @@ import logging
 
 import spiral
 
-API_KEY = 'LAqUlngMIQkIUjXMUreyu3qn'
-API_SECRET = 'chNOOS4KvNXR_Xq4k4c9qsfoKWvnDecLATCRlcBwyKDYnWgO'
+API_KEY = '90ee6cf7c4e949cf9c45886b88eb129a'
+API_SECRET = 'd027e0ec1f85482aa7b255abc08b157a'
 API_EXPIRES = 24 * 3600
 
 
@@ -21,9 +21,11 @@ def loop_handle_data(api):
 
         if data['event'] == 'connected':
             # subscribe public
+            logging.info('websocket connected')
             api.ws.subscribe_orderbook(symbols=["ETHUSDT"])
         elif data['event'] == 'authenticated':
             # subscribe private
+            logging.info('websocket authenticated')
             api.ws.subscribe_order(symbols=["ETHUSDT"])
         elif data['event'] == 'orderbook':
             if data['data']['symbol'] != 'ETHUSDT':
@@ -56,9 +58,9 @@ def trade():
 
     api.start()
 
-    currencies = api.rest.get_currencies()
-    logging.info('currencies:')
-    logging.info(currencies)
+    balances = api.rest.get_wallet_balances(currency='USDT')
+    logging.info('balances:')
+    logging.info(balances)
 
     try:
         loop_handle_data(api)
@@ -70,7 +72,7 @@ def trade():
 
 def main():
     format = '%(asctime)s %(filename)s [%(lineno)d][%(levelname)s] %(message)s'
-    logging.basicConfig(level=logging.INFO, format=format)
+    logging.basicConfig(level=logging.DEBUG, format=format)
 
     trade()
 

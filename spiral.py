@@ -39,9 +39,12 @@ class Rest(object):
         self.session.close()
 
     def _auth_headers(self, method, path, data):
-        expires = str(int(time.time() + self.expires))
+        expires = int(time.time() + self.expires)
 
-        signature_data = method + path + expires + data
+        if not data:
+            data = ''
+
+        signature_data = method + path + str(expires) + data
         logging.debug(signature_data)
 
         signature = hmac.new(self.secret, msg=signature_data,
@@ -56,7 +59,7 @@ class Rest(object):
 
     def _http(self, method, endpoint, params, data):
         url = self.url + endpoint
-        req = requests.Request('GET', url, params=params)
+        req = requests.Request('GET', url, params=params, data=data)
         prepped = req.prepare()
         resp = self.session.send(prepped)
         logging.debug(resp.status_code)
@@ -65,9 +68,17 @@ class Rest(object):
 
     def _http_auth(self, method, endpoint, params, data):
         url = self.url + endpoint
-        req = requests.Request(method, url, params=params)
+        req = requests.Request(method, url, params=params, data=data)
         prepped = req.prepare()
-        prepped.headers = self._auth_headers(method, prepped.path_url, data)
+
+        headers = self._auth_headers(method, prepped.path_url, prepped.body)
+
+        for key, value in headers.iteritems():
+            prepped.headers[key] = value
+        prepped.headers['Content-Type'] = 'application/json'
+
+        logging.debug(prepped.headers)
+
         resp = self.session.send(prepped)
         logging.debug(resp.status_code)
         logging.debug(resp.json())
@@ -107,25 +118,19 @@ class Rest(object):
         return self._http_auth('DELETE', '/order/all', '', json.dumps(kwargs))
 
 
-class Websocket(object):
-    """docstring for Websocket."""
+class Connection(object):
+    """docstring for Connection."""
 
-    def __init__(self, key, secret, expires):
-        super(Websocket, self).__init__()
+    def __init__(self, type, queue, key, secret, expires):
+        super(Connection, self).__init__()
+        self.type = type
         self.ping_timer = None
         self.key = key
         self.secret = secret
         self.expires = expires
         self.url = WS_URL
-        self.queue = multiprocessing.Queue(QUEUE_MAX_SIZE)
+        self.queue = queue
         self.retry_delay = INITIAL_RETRY_DELAY
-
-    def start(self):
-        self._ws_start()
-
-    def stop(self):
-        self.socket.close()
-        self._stop_timer()
 
     def _ws_start(self):
         self.socket = websocket.WebSocketApp(self.url,
@@ -147,8 +152,9 @@ class Websocket(object):
         logging.debug(message)
 
         data = json.loads(message)
-        if data['event'] == 'connected':
+        if self.type == 'private' and data['event'] == 'connected':
             self._auth()
+            return
         elif data['event'] == 'pong':
             self._start_timer()
             return
@@ -178,14 +184,14 @@ class Websocket(object):
         if self.ping_timer:
             self.ping_timer.cancel()
 
-    def _send_data(self, event, data):
+    def send_data(self, event, data):
         self.socket.send(json.dumps({
             'event': event,
             'data': data
         }))
 
     def _heartbeat(self):
-        self._send_data('ping', int(time.time()))
+        self.send_data('ping', int(time.time()))
 
     def _auth(self):
         expires = int(time.time() + self.expires)
@@ -197,38 +203,64 @@ class Websocket(object):
             'expires': expires,
             'signature': signature
         }
-        self._send_data('authenticate', data)
+        self.send_data('authenticate', data)
 
     def _enqueue_data(self, data):
         self.queue.put(data)
 
-    def _dequeue_data(self):
-        return self.queue.get()
+    def start(self):
+        self._ws_start()
+
+    def stop(self):
+        self.socket.close()
+        self._stop_timer()
+
+
+class Websocket(object):
+    """docstring for Websocket."""
+
+    def __init__(self, key, secret, expires):
+        super(Websocket, self).__init__()
+        self.queue = multiprocessing.Queue(QUEUE_MAX_SIZE)
+        self.public = Connection('public', self.queue, key, secret, expires)
+        self.private = Connection('private', self.queue, key, secret, expires)
+
+    def start(self):
+        self.public.start()
+        self.private.start()
+
+    def stop(self):
+        self.public.stop()
+        self.private.stop()
 
     def get_data(self):
-        return self._dequeue_data()
+        return self.queue.get()
 
-    def _subscribe(self, topic, kwargs):
+    def _subscribe_public(self, topic, kwargs):
         data = dict({'topic': topic}.items() + kwargs.items())
-        self._send_data('subscribe', data)
+        self.public.send_data('subscribe', data)
+
+    def _subscribe_private(self, topic, kwargs):
+        data = dict({'topic': topic}.items() + kwargs.items())
+        self.private.send_data('subscribe', data)
 
     def subscribe_ticker(self, **kwargs):
-        self._subscribe('ticker', kwargs)
+        self._subscribe_public('ticker', kwargs)
 
     def subscribe_orderbook(self, **kwargs):
-        self._subscribe('orderbook', kwargs)
+        self._subscribe_public('orderbook', kwargs)
 
     def subscribe_trade(self, **kwargs):
-        self._subscribe('trade', kwargs)
+        self._subscribe_public('trade', kwargs)
 
     def subscribe_kline(self, **kwargs):
-        self._subscribe('kline', kwargs)
+        self._subscribe_public('kline', kwargs)
 
     def subscribe_order(self, **kwargs):
-        self._subscribe('order', kwargs)
+        self._subscribe_private('order', kwargs)
 
     def subscribe_account(self, **kwargs):
-        self._subscribe('account', kwargs)
+        self._subscribe_private('account', kwargs)
 
 
 class Sprial(object):
@@ -267,8 +299,8 @@ def spiral_test_handle_data(api):
 
 
 def spiral_test():
-    api_key = 'LAqUlngMIQkIUjXMUreyu3qn'
-    api_secret = 'chNOOS4KvNXR_Xq4k4c9qsfoKWvnDecLATCRlcBwyKDYnWgO'
+    api_key = '90ee6cf7c4e949cf9c45886b88eb129a'
+    api_secret = 'd027e0ec1f85482aa7b255abc08b157a'
     api_expires = 60
 
     api = Sprial(api_key, api_secret, api_expires)
