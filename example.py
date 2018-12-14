@@ -10,71 +10,84 @@ API_SECRET = 'd027e0ec1f85482aa7b255abc08b157a'
 API_EXPIRES = 24 * 3600
 
 
-def loop_handle_data(api):
-    while True:
-        data = api.ws.get_data()
-        if not data:
-            return
+class Trader(object):
+    """docstring for Trader."""
 
-        logging.info('got data:')
-        logging.info(data)
+    def __init__(self):
+        super(Trader, self).__init__()
 
-        if data['event'] == 'connected':
-            # subscribe public
-            logging.info('websocket connected')
-            api.ws.subscribe_orderbook(symbols=["ETHUSDT"])
-        elif data['event'] == 'authenticated':
-            # subscribe private
-            logging.info('websocket authenticated')
-            api.ws.subscribe_order(symbols=["ETHUSDT"])
-        elif data['event'] == 'orderbook':
-            if data['data']['symbol'] != 'ETHUSDT':
-                continue
+    def loop_handle_data(self):
+        while True:
+            data = self.api.ws.get_data()
+            if not data:
+                return
 
-            if 'data' not in data['data']:
-                continue
+            logging.info('got data:')
+            logging.info(data)
 
-            orders = data['data']['data']
+            if data['event'] == 'connected':
+                # subscribe public
+                logging.info('websocket connected')
+                self.api.ws.subscribe_orderbook(symbols=["ETHUSDT"])
+            elif data['event'] == 'authenticated':
+                # subscribe private
+                logging.info('websocket authenticated')
+                self.api.ws.subscribe_order(symbols=["ETHUSDT"])
+            elif data['event'] == 'orderbook':
+                if data['data']['symbol'] != 'ETHUSDT':
+                    continue
 
-            if orders[0][2] != 'bid':
-                continue
+                if 'data' not in data['data']:
+                    continue
 
-            price = orders[0][0]
-            quantity = float(orders[0][1])
+                orders = data['data']['data']
 
-            if quantity > 0 and price > 100.0:
-                logging.info('post_order')
-                errcode, resp = api.rest.post_order(
-                    symbol='ETHUSDT', side='ask', type='limit', quantity=quantity, price=price)
-                logging.info('errcode:')
-                logging.info(errcode)
-                logging.info('resp:')
-                logging.info(resp)
+                if orders[0][2] != 'bid':
+                    continue
 
+                price = orders[0][0]
+                quantity = float(orders[0][1])
 
-def trade():
+                if quantity > 0 and price > 100.0:
+                    logging.info('post_order')
+                    (errcode, resp) = self.api.rest.post_order(
+                        symbol='ETHUSDT', side='ask', type='limit', quantity=quantity, price=price)
+                    logging.info('errcode:')
+                    logging.info(errcode)
+                    logging.info('resp:')
+                    logging.info(resp)
 
-    api = spiral.Sprial(API_KEY, API_SECRET, API_EXPIRES)
+    def trade(self):
 
-    api.start()
+        self.api = spiral.Sprial(API_KEY, API_SECRET, API_EXPIRES)
 
-    balances = api.rest.get_wallet_balances(currency='USDT')
-    logging.info('balances:')
-    logging.info(balances)
+        self.api.start()
 
-    try:
-        loop_handle_data(api)
-    except KeyboardInterrupt:
-        pass
+        balances = self.api.rest.get_wallet_balances(currency='USDT')
+        logging.info('balances:')
+        logging.info(balances)
 
-    api.stop()
+        self.loop_handle_data()
+
+        self.api.stop()
+
+    def stop(self):
+        self.api.stop()
 
 
 def main():
     format = '%(asctime)s %(filename)s [%(lineno)d][%(levelname)s] %(message)s'
     logging.basicConfig(level=logging.INFO, format=format)
 
-    trade()
+    trader = Trader()
+    try:
+        trader.trade()
+    except KeyboardInterrupt:
+        logging.info('exiting...')
+        trader.stop()
+    except Exception as e:
+        logging.exception(e)
+        trader.stop()
 
 
 if __name__ == '__main__':
