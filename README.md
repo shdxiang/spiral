@@ -73,6 +73,12 @@ api.ws.subscribe_order(symbols=["BTCUSDT"])
 api.ws.subscribe_account()
 ```
 
+### Get received Websocket data
+
+```
+api.ws.get_data()
+```
+
 ## Test
 
 ```
