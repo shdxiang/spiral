@@ -2,6 +2,8 @@
 
 Python API for https://www.spiral.exchange/
 
+Python version: 2.7
+
 ## Usage
 
 Install requirements:
